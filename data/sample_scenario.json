@@ -1,0 +1,24 @@
+{
+  "name": "Kumbh Mela ghat - 4 phones, no cellular signal",
+  "range": 100,
+  "maxTicks": 50,
+  "nodes": [
+    { "id": "PhoneA", "x": 0, "y": 0 },
+    { "id": "PhoneB", "x": 80, "y": 10 },
+    { "id": "PhoneC", "x": 160, "y": 0 },
+    { "id": "PhoneD", "x": 120, "y": 90 },
+    { "id": "ControlRoom", "x": 240, "y": 10, "isGateway": true }
+  ],
+  "events": [
+    {
+      "from": "PhoneA",
+      "type": "SOS",
+      "payload": { "kind": "medical", "note": "Elderly person collapsed near Ghat 4", "lat": 19.9975, "lon": 73.7898 }
+    },
+    {
+      "from": "PhoneD",
+      "type": "LOST_PERSON",
+      "payload": { "name": "Aarav", "age": 6, "lastSeen": "Gate 2 food stalls", "guardianContact": "Parent phone: PhoneD" }
+    }
+  ]
+}

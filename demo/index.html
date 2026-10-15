@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesh SOS Demo</title>
+<style>
+  :root { --bg:#0f1720; --card:#17212b; --txt:#e8eef5; --mut:#8aa0b4; --ok:#2ecc71; --bad:#ff5a5f; --line:#33465a; --acc:#4da3ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--txt); padding:16px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p.sub { color:var(--mut); margin:0 0 12px; font-size:14px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  button { background:var(--acc); color:#04121f; border:0; padding:10px 14px; border-radius:8px; font-weight:600; cursor:pointer; font-size:14px; }
+  button.sos { background:var(--bad); color:#fff; }
+  button.alt { background:#2b3a4a; color:var(--txt); }
+  canvas { width:100%; max-width:760px; background:var(--card); border-radius:12px; display:block; }
+  #log { max-width:760px; margin-top:12px; background:var(--card); border-radius:12px; padding:12px; font-family: ui-monospace, monospace; font-size:13px; min-height:90px; }
+  .row { margin:3px 0; }
+  .status { margin-left:auto; color:var(--mut); font-size:13px; align-self:center; }
+</style>
+</head>
+<body>
+<h1>Offline Mesh SOS: alert hopping with no cellular signal</h1>
+<p class="sub">Phone A cannot reach the control room directly. The alert hops phone to phone. Drag any phone to change who can hear whom.</p>
+<div class="bar">
+  <button class="sos" id="sos">Send SOS from Phone A</button>
+  <button class="alt" id="lost">Lost child beacon from Phone D</button>
+  <button class="alt" id="reset">Reset</button>
+  <span class="status" id="status">Radio range: 100 m</span>
+</div>
+<canvas id="c" width="760" height="380"></canvas>
+<div id="log"><div class="row">Ready. Press a button.</div></div>
+<script>
+(function () {
+  var canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+  var RANGE = 130;
+  var nodes = [
+    { id: 'Phone A', x: 70,  y: 200 },
+    { id: 'Phone B', x: 220, y: 150 },
+    { id: 'Phone C', x: 390, y: 200 },
+    { id: 'Phone D', x: 330, y: 320 },
+    { id: 'Control Room', x: 690, y: 190, gw: true }
+  ];
+  var state = {}; // id -> 'idle' | 'has'
+  var packets = []; // animated in-flight packets
+  var seen = {}, queue = [], busy = false, origin = null, kind = '';
+  function reset() {
+    state = {}; packets = []; seen = {}; queue = []; busy = false;
+    nodes.forEach(function (n) { state[n.id] = 'idle'; });
+    document.getElementById('log').innerHTML = '<div class="row">Ready. Press a button.</div>';
+  }
+  function log(t) {
+    var d = document.createElement('div'); d.className = 'row'; d.textContent = t;
+    var l = document.getElementById('log');
+    if (l.firstChild && l.firstChild.textContent === 'Ready. Press a button.') l.innerHTML = '';
+    l.appendChild(d);
+  }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  function neighbours(n) { return nodes.filter(function (m) { return m !== n && dist(m, n) <= RANGE; }); }
+  function start(fromId, label) {
+    reset();
+    var n = nodes.filter(function (x) { return x.id === fromId; })[0];
+    origin = n; kind = label;
+    state[n.id] = 'has'; seen[n.id] = true;
+    log(label + ' created on ' + n.id + ' (encrypted payload, TTL 8)');
+    queue = [{ node: n, hops: 0, path: [n.id] }];
+    step();
+  }
+  function step() {
+    if (!queue.length) {
+      if (!seen['Control Room']) log('No route to the control room right now. Alert is stored on phones and waits (store-and-forward). Drag a phone closer.');
+      busy = false; return;
+    }
+    busy = true;
+    var wave = queue; queue = [];
+    var pending = 0;
+    wave.forEach(function (item) {
+      neighbours(item.node).forEach(function (nb) {
+        if (seen[nb.id]) return;
+        seen[nb.id] = true;
+        pending++;
+        packets.push({ from: item.node, to: nb, t: 0, done: function () {
+          state[nb.id] = 'has';
+          var path = item.path.concat(nb.id);
+          if (nb.gw) {
+            log('DELIVERED to Control Room in ' + (item.hops + 1) + ' hops: ' + path.join(' -> '));
+          } else {
+            log(nb.id + ' stored and relays (cannot read payload)');
+            queue.push({ node: nb, hops: item.hops + 1, path: path });
+          }
+          pending--;
+          if (pending === 0) setTimeout(step, 250);
+        }});
+      });
+    });
+    if (pending === 0) { busy = false; step_end(); }
+  }
+  function step_end() { if (!seen['Control Room']) log('No route to the control room right now. Alert is stored on phones and waits (store-and-forward). Drag a phone closer.'); }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // links
+    nodes.forEach(function (a, i) {
+      nodes.forEach(function (b, j) {
+        if (j > i && dist(a, b) <= RANGE) {
+          ctx.strokeStyle = '#33465a'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 5]);
+          ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+        }
+      });
+    });
+    // range ring for origin
+    nodes.forEach(function (n) {
+      var has = state[n.id] === 'has';
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.gw ? 24 : 18, 0, 7);
+      ctx.fillStyle = n.gw ? (has ? '#2ecc71' : '#2b6b45') : (has ? '#ff5a5f' : '#2b3a4a');
+      ctx.fill();
+      ctx.fillStyle = '#e8eef5'; ctx.font = '13px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(n.id, n.x, n.y + (n.gw ? 42 : 36));
+      if (n.gw) { ctx.font = '11px system-ui'; ctx.fillStyle = '#8aa0b4'; ctx.fillText('satellite uplink', n.x, n.y + 56); }
+    });
+    // packets
+    packets = packets.filter(function (p) {
+      p.t += 0.03;
+      var x = p.from.x + (p.to.x - p.from.x) * Math.min(p.t, 1);
+      var y = p.from.y + (p.to.y - p.from.y) * Math.min(p.t, 1);
+      ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fillStyle = '#ffd24d'; ctx.fill();
+      if (p.t >= 1) { p.done(); return false; }
+      return true;
+    });
+    requestAnimationFrame(draw);
+  }
+  // dragging
+  var drag = null;
+  function pos(e) { var r = canvas.getBoundingClientRect(); var t = e.touches ? e.touches[0] : e;
+    return { x: (t.clientX - r.left) * canvas.width / r.width, y: (t.clientY - r.top) * canvas.height / r.height }; }
+  function down(e) { var p = pos(e); drag = nodes.filter(function (n) { return dist(n, p) < 26; })[0] || null; }
+  function move(e) { if (!drag) return; e.preventDefault(); var p = pos(e); drag.x = p.x; drag.y = p.y; }
+  function up() { drag = null; }
+  canvas.addEventListener('mousedown', down); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+  canvas.addEventListener('touchstart', down); canvas.addEventListener('touchmove', move, { passive: false }); canvas.addEventListener('touchend', up);
+
+  document.getElementById('sos').onclick = function () { start('Phone A', 'SOS'); };
+  document.getElementById('lost').onclick = function () { start('Phone D', 'LOST CHILD'); };
+  document.getElementById('reset').onclick = reset;
+  reset(); draw();
+})();
+</script>
+</body>
+</html>
