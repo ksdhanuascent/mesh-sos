@@ -1,0 +1,12 @@
+{
+  "name": "mesh-sos",
+  "version": "1.0.0",
+  "description": "Offline Mesh-Network SOS & Family Tracker for Mass Gatherings - core protocol, simulator and demo",
+  "main": "src/mesh.js",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "simulate": "node src/simulate.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
